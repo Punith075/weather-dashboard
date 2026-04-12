@@ -12,7 +12,8 @@ from datetime import date, timedelta
 st.set_page_config(
     page_title="Weather Dashboard",
     page_icon="🌦",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # -----------------------------
@@ -25,64 +26,12 @@ if "weather_data" not in st.session_state:
     st.session_state.weather_data = None
 
 # -----------------------------
-# Light theme CSS
+# Sidebar controls
 # -----------------------------
-st.markdown("""
-<style>
-header {visibility: hidden;}
-footer {visibility: hidden;}
-#MainMenu {visibility: hidden;}
+st.sidebar.title("Select Location")
 
-.stApp {
-    background-color: #f5f7fb;
-    color: #1e293b;
-}
+theme = st.sidebar.radio("Theme", ["Light ☀️", "Dark 🌙"])
 
-section[data-testid="stSidebar"] {
-    background-color: #ffffff;
-}
-
-.main-title {
-    font-size: 28px;
-    font-weight: bold;
-    color: #0f172a;
-    margin-bottom: 6px;
-}
-
-.sub-title {
-    color: #475569;
-    margin-bottom: 16px;
-    font-size: 15px;
-}
-
-div[data-testid="stMetric"] {
-    background: #ffffff;
-    padding: 12px;
-    border-radius: 12px;
-    border: 1px solid #e2e8f0;
-    box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
-}
-
-div[data-testid="stMetric"] label {
-    color: #64748b !important;
-}
-
-div[data-testid="stMetric"] div {
-    color: #0f172a !important;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -----------------------------
-# Title
-# -----------------------------
-st.markdown('<div class="main-title">🌦 Weather Dashboard</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Forecast + historical weather analysis + rain percentage</div>', unsafe_allow_html=True)
-
-# -----------------------------
-# Places
-# -----------------------------
 PLACES = {
     "Bengaluru": (12.9716, 77.5946),
     "Chennai": (13.0827, 80.2707),
@@ -99,17 +48,160 @@ PLACES = {
     "Karnataka": (15.3173, 75.7139)
 }
 
-# -----------------------------
-# Sidebar
-# -----------------------------
-st.sidebar.title("Select Location")
-
 place = st.sidebar.selectbox("Choose place", list(PLACES.keys()))
 start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=7))
 end_date = st.sidebar.date_input("End Date", date.today() - timedelta(days=1))
 
-get_weather_btn = st.sidebar.button("Get Weather", use_container_width=True)
-clear_btn = st.sidebar.button("Clear", use_container_width=True)
+get_weather_btn = st.sidebar.button("Get Weather", width="stretch")
+clear_btn = st.sidebar.button("Clear", width="stretch")
+
+# -----------------------------
+# Theme settings
+# -----------------------------
+if theme == "Light ☀️":
+    bg_color = "#f5f7fb"
+    app_bg = "#f5f7fb"
+    sidebar_bg = "#ffffff"
+    header_bg = "#f5f7fb"
+    text_color = "#1e293b"
+    title_color = "#0f172a"
+    subtitle_color = "#475569"
+    card_bg = "#ffffff"
+    card_border = "#e2e8f0"
+    label_color = "#64748b"
+    metric_color = "#0f172a"
+    info_bg = "#e0f2fe"
+    info_text = "#0f172a"
+    plotly_template = "plotly_white"
+    paper_bg = "#f5f7fb"
+    plot_bg = "#ffffff"
+else:
+    bg_color = "#020617"
+    app_bg = "#020617"
+    sidebar_bg = "#0f172a"
+    header_bg = "#020617"
+    text_color = "#f8fafc"
+    title_color = "#f8fafc"
+    subtitle_color = "#cbd5e1"
+    card_bg = "#1e293b"
+    card_border = "#334155"
+    label_color = "#cbd5e1"
+    metric_color = "#f8fafc"
+    info_bg = "#1e293b"
+    info_text = "#f8fafc"
+    plotly_template = "plotly_dark"
+    paper_bg = "#020617"
+    plot_bg = "#1e293b"
+
+# -----------------------------
+# Apply theme CSS
+# -----------------------------
+st.markdown(
+    f"""
+    <style>
+    header, footer, #MainMenu {{
+        visibility: hidden;
+    }}
+
+    html, body, [data-testid="stAppViewContainer"], .stApp {{
+        background: {app_bg} !important;
+        color: {text_color} !important;
+    }}
+
+    [data-testid="stHeader"] {{
+        background: {header_bg} !important;
+    }}
+
+    [data-testid="stToolbar"] {{
+        right: 1rem;
+    }}
+
+    section[data-testid="stSidebar"] {{
+        background: {sidebar_bg} !important;
+        color: {text_color} !important;
+    }}
+
+    .block-container {{
+        padding-top: 1.2rem;
+        padding-bottom: 2rem;
+    }}
+
+    .main-title {{
+        font-size: 2.2rem;
+        font-weight: 800;
+        color: {title_color};
+        margin-bottom: 0.25rem;
+    }}
+
+    .sub-title {{
+        font-size: 1rem;
+        color: {subtitle_color};
+        margin-bottom: 1rem;
+    }}
+
+    div[data-testid="stMetric"] {{
+        background: {card_bg} !important;
+        border: 1px solid {card_border} !important;
+        border-radius: 14px !important;
+        padding: 14px !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+    }}
+
+    div[data-testid="stMetric"] label {{
+        color: {label_color} !important;
+    }}
+
+    div[data-testid="stMetric"] div {{
+        color: {metric_color} !important;
+        font-weight: 700 !important;
+    }}
+
+    [data-testid="stMarkdownContainer"] p,
+    [data-testid="stMarkdownContainer"] li,
+    [data-testid="stText"],
+    .st-emotion-cache-10trblm,
+    .st-emotion-cache-16idsys {{
+        color: {text_color} !important;
+    }}
+
+    [data-baseweb="tab-list"] {{
+        gap: 8px;
+    }}
+
+    [data-baseweb="tab"] {{
+        color: {text_color} !important;
+    }}
+
+    [data-testid="stInfo"] {{
+        background: {info_bg} !important;
+        color: {info_text} !important;
+        border: 1px solid {card_border} !important;
+    }}
+
+    .stDateInput input,
+    .stSelectbox div[data-baseweb="select"] > div,
+    .stTextInput input {{
+        background: {card_bg} !important;
+        color: {text_color} !important;
+        border-color: {card_border} !important;
+    }}
+
+    .stButton > button {{
+        border-radius: 10px !important;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# -----------------------------
+# Title
+# -----------------------------
+st.markdown('<div class="main-title">🌦 Weather Dashboard</div>', unsafe_allow_html=True)
+st.markdown(
+    '<div class="sub-title">Forecast + historical weather analysis + rain percentage</div>',
+    unsafe_allow_html=True
+)
 
 # -----------------------------
 # API functions
@@ -127,33 +219,38 @@ def get_weather(lat, lon):
             "timezone": "auto"
         }
         response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
         return response.json()
-    except:
+    except Exception:
         st.error("Failed to fetch weather data")
         return None
 
 
 def get_history(lat, lon, start, end):
-    url = "https://archive-api.open-meteo.com/v1/archive"
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "start_date": start,
-        "end_date": end,
-        "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation",
-        "timezone": "auto"
-    }
-    response = requests.get(url, params=params, timeout=20)
-    response.raise_for_status()
-    return response.json()
+    try:
+        url = "https://archive-api.open-meteo.com/v1/archive"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "start_date": start,
+            "end_date": end,
+            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation",
+            "timezone": "auto"
+        }
+        response = requests.get(url, params=params, timeout=20)
+        response.raise_for_status()
+        return response.json()
+    except Exception:
+        st.error("Failed to fetch historical data")
+        return None
 
 
-def make_light_plotly(fig):
+def apply_plotly_theme(fig):
     fig.update_layout(
-        template="plotly_white",
-        paper_bgcolor="#f5f7fb",
-        plot_bgcolor="#ffffff",
-        font=dict(color="#1e293b"),
+        template=plotly_template,
+        paper_bgcolor=paper_bg,
+        plot_bgcolor=plot_bg,
+        font=dict(color=text_color),
         margin=dict(l=20, r=20, t=40, b=20)
     )
     return fig
@@ -162,16 +259,16 @@ def make_light_plotly(fig):
 # Button logic
 # -----------------------------
 if get_weather_btn:
-    try:
-        if start_date > end_date:
-            st.error("Start date must be earlier than or equal to end date.")
-            st.session_state.show_weather = False
-            st.session_state.weather_data = None
-        else:
-            lat, lon = PLACES[place]
-            weather = get_weather(lat, lon)
-            history = get_history(lat, lon, str(start_date), str(end_date))
+    if start_date > end_date:
+        st.error("Start date must be earlier than or equal to end date.")
+        st.session_state.show_weather = False
+        st.session_state.weather_data = None
+    else:
+        lat, lon = PLACES[place]
+        weather = get_weather(lat, lon)
+        history = get_history(lat, lon, str(start_date), str(end_date))
 
+        if weather is not None and history is not None:
             st.session_state.weather_data = {
                 "place": place,
                 "lat": lat,
@@ -180,11 +277,9 @@ if get_weather_btn:
                 "history": history
             }
             st.session_state.show_weather = True
-
-    except Exception as e:
-        st.session_state.show_weather = False
-        st.session_state.weather_data = None
-        st.error(f"Error: {e}")
+        else:
+            st.session_state.show_weather = False
+            st.session_state.weather_data = None
 
 if clear_btn:
     st.session_state.show_weather = False
@@ -214,11 +309,9 @@ if st.session_state.show_weather and st.session_state.weather_data:
     history_df = pd.DataFrame(history["hourly"])
     history_df["time"] = pd.to_datetime(history_df["time"])
 
-    # Map
     m = folium.Map(location=[lat, lon], zoom_start=6, tiles="OpenStreetMap")
     folium.Marker([lat, lon], tooltip=place, popup=place).add_to(m)
 
-    # Forecast charts
     fig_forecast_temp = px.line(
         forecast_df,
         x="time",
@@ -226,7 +319,7 @@ if st.session_state.show_weather and st.session_state.weather_data:
         markers=True,
         title="Forecast Temperature"
     )
-    make_light_plotly(fig_forecast_temp)
+    apply_plotly_theme(fig_forecast_temp)
     fig_forecast_temp.update_yaxes(title="Temperature (°C)")
 
     fig_rain = px.bar(
@@ -235,10 +328,9 @@ if st.session_state.show_weather and st.session_state.weather_data:
         y="precipitation_probability",
         title="Forecast Rain Percentage"
     )
-    make_light_plotly(fig_rain)
+    apply_plotly_theme(fig_rain)
     fig_rain.update_yaxes(title="Rain Percentage (%)", range=[0, 100])
 
-    # History charts
     fig_history_temp = px.line(
         history_df,
         x="time",
@@ -246,7 +338,7 @@ if st.session_state.show_weather and st.session_state.weather_data:
         markers=True,
         title="Historical Temperature"
     )
-    make_light_plotly(fig_history_temp)
+    apply_plotly_theme(fig_history_temp)
     fig_history_temp.update_yaxes(title="Temperature (°C)")
 
     fig_history_rain = px.bar(
@@ -255,7 +347,7 @@ if st.session_state.show_weather and st.session_state.weather_data:
         y="precipitation",
         title="Historical Rainfall"
     )
-    make_light_plotly(fig_history_rain)
+    apply_plotly_theme(fig_history_rain)
     fig_history_rain.update_yaxes(title="Rainfall (mm)")
 
     show_df = history_df.rename(columns={
@@ -284,20 +376,20 @@ if st.session_state.show_weather and st.session_state.weather_data:
 
     with tab2:
         st.subheader("Forecast Temperature")
-        st.plotly_chart(fig_forecast_temp, use_container_width=True)
+        st.plotly_chart(fig_forecast_temp, width="stretch")
 
         st.subheader("Forecast Rain")
-        st.plotly_chart(fig_rain, use_container_width=True)
+        st.plotly_chart(fig_rain, width="stretch")
 
     with tab3:
         st.subheader("Historical Temperature")
-        st.plotly_chart(fig_history_temp, use_container_width=True)
+        st.plotly_chart(fig_history_temp, width="stretch")
 
         st.subheader("Historical Rainfall")
-        st.plotly_chart(fig_history_rain, use_container_width=True)
+        st.plotly_chart(fig_history_rain, width="stretch")
 
         st.subheader("Historical Data")
-        st.dataframe(show_df, use_container_width=True, hide_index=True)
+        st.dataframe(show_df, width="stretch", hide_index=True)
 
 else:
     st.info("Select a place and click Get Weather")
