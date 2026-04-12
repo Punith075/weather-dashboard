@@ -25,7 +25,7 @@ if "weather_data" not in st.session_state:
     st.session_state.weather_data = None
 
 # -----------------------------
-# LIGHT THEME CSS
+# Light theme CSS
 # -----------------------------
 st.markdown("""
 <style>
@@ -43,19 +43,21 @@ section[data-testid="stSidebar"] {
 }
 
 .main-title {
-    font-size: 36px;
+    font-size: 28px;
     font-weight: bold;
     color: #0f172a;
+    margin-bottom: 6px;
 }
 
 .sub-title {
     color: #475569;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
+    font-size: 15px;
 }
 
 div[data-testid="stMetric"] {
     background: #ffffff;
-    padding: 15px;
+    padding: 12px;
     border-radius: 12px;
     border: 1px solid #e2e8f0;
     box-shadow: 0px 4px 10px rgba(0,0,0,0.05);
@@ -88,6 +90,11 @@ PLACES = {
     "Mumbai": (19.0760, 72.8777),
     "Delhi": (28.6139, 77.2090),
     "Kolkata": (22.5726, 88.3639),
+    "Coimbatore": (11.0168, 76.9558),
+    "Madurai": (9.9252, 78.1198),
+    "Salem": (11.6643, 78.1460),
+    "Trichy": (10.7905, 78.7047),
+    "Vellore": (12.9165, 79.1325),
     "Tamil Nadu": (11.1271, 78.6569),
     "Karnataka": (15.3173, 75.7139)
 }
@@ -101,26 +108,29 @@ place = st.sidebar.selectbox("Choose place", list(PLACES.keys()))
 start_date = st.sidebar.date_input("Start Date", date.today() - timedelta(days=7))
 end_date = st.sidebar.date_input("End Date", date.today() - timedelta(days=1))
 
-get_weather_btn = st.sidebar.button("Get Weather")
-clear_btn = st.sidebar.button("Clear")
+get_weather_btn = st.sidebar.button("Get Weather", use_container_width=True)
+clear_btn = st.sidebar.button("Clear", use_container_width=True)
 
 # -----------------------------
-# API
+# API functions
 # -----------------------------
 def get_weather(lat, lon):
-    url = "https://api.open-meteo.com/v1/forecast"
-    params = {
-        "latitude": lat,
-        "longitude": lon,
-        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
-        "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation_probability",
-        "daily": "precipitation_probability_max",
-        "forecast_days": 3,
-        "timezone": "auto"
-    }
-    response = requests.get(url, params=params, timeout=20)
-    response.raise_for_status()
-    return response.json()
+    try:
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat,
+            "longitude": lon,
+            "current": "temperature_2m,relative_humidity_2m,wind_speed_10m",
+            "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation_probability",
+            "daily": "precipitation_probability_max",
+            "forecast_days": 3,
+            "timezone": "auto"
+        }
+        response = requests.get(url, params=params, timeout=10)
+        return response.json()
+    except:
+        st.error("Failed to fetch weather data")
+        return None
 
 
 def get_history(lat, lon, start, end):
@@ -138,9 +148,6 @@ def get_history(lat, lon, start, end):
     return response.json()
 
 
-# -----------------------------
-# Plotly light theme
-# -----------------------------
 def make_light_plotly(fig):
     fig.update_layout(
         template="plotly_white",
@@ -173,6 +180,7 @@ if get_weather_btn:
                 "history": history
             }
             st.session_state.show_weather = True
+
     except Exception as e:
         st.session_state.show_weather = False
         st.session_state.weather_data = None
@@ -190,11 +198,8 @@ if st.session_state.show_weather and st.session_state.weather_data:
     place = data["place"]
     lat = data["lat"]
     lon = data["lon"]
-
     weather = data["weather"]
     history = data["history"]
-
-    st.subheader(f"📍 {place}")
 
     current_temp = weather["current"]["temperature_2m"]
     current_humidity = weather["current"]["relative_humidity_2m"]
@@ -206,53 +211,53 @@ if st.session_state.show_weather and st.session_state.weather_data:
     daily_df = pd.DataFrame(weather["daily"])
     daily_rain_pct = int(daily_df["precipitation_probability_max"].iloc[0]) if not daily_df.empty else 0
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Temperature", f"{current_temp} °C")
-    c2.metric("Humidity", f"{current_humidity} %")
-    c3.metric("Wind Speed", f"{current_wind} km/h")
-    c4.metric("Rain Chance", f"{daily_rain_pct} %")
+    history_df = pd.DataFrame(history["hourly"])
+    history_df["time"] = pd.to_datetime(history_df["time"])
 
-    st.subheader("Map")
+    # Map
     m = folium.Map(location=[lat, lon], zoom_start=6, tiles="OpenStreetMap")
-    folium.Marker([lat, lon]).add_to(m)
-    st_folium(m, width=None, height=400)
+    folium.Marker([lat, lon], tooltip=place, popup=place).add_to(m)
 
-    st.subheader("Forecast Temperature")
-    fig = px.line(forecast_df, x="time", y="temperature_2m", markers=True)
-    make_light_plotly(fig)
-    st.plotly_chart(fig, use_container_width=True)
+    # Forecast charts
+    fig_forecast_temp = px.line(
+        forecast_df,
+        x="time",
+        y="temperature_2m",
+        markers=True,
+        title="Forecast Temperature"
+    )
+    make_light_plotly(fig_forecast_temp)
+    fig_forecast_temp.update_yaxes(title="Temperature (°C)")
 
-    st.subheader("Forecast Rain Percentage")
     fig_rain = px.bar(
         forecast_df,
         x="time",
         y="precipitation_probability",
-        title="Hourly Rain Chance (%)"
+        title="Forecast Rain Percentage"
     )
     make_light_plotly(fig_rain)
     fig_rain.update_yaxes(title="Rain Percentage (%)", range=[0, 100])
-    st.plotly_chart(fig_rain, use_container_width=True)
 
-    history_df = pd.DataFrame(history["hourly"])
-    history_df["time"] = pd.to_datetime(history_df["time"])
+    # History charts
+    fig_history_temp = px.line(
+        history_df,
+        x="time",
+        y="temperature_2m",
+        markers=True,
+        title="Historical Temperature"
+    )
+    make_light_plotly(fig_history_temp)
+    fig_history_temp.update_yaxes(title="Temperature (°C)")
 
-    st.subheader("Historical Temperature")
-    fig2 = px.line(history_df, x="time", y="temperature_2m", markers=True)
-    make_light_plotly(fig2)
-    st.plotly_chart(fig2, use_container_width=True)
-
-    st.subheader("Historical Rainfall")
-    fig3 = px.bar(
+    fig_history_rain = px.bar(
         history_df,
         x="time",
         y="precipitation",
-        title="Past Rainfall (mm)"
+        title="Historical Rainfall"
     )
-    make_light_plotly(fig3)
-    fig3.update_yaxes(title="Rainfall (mm)")
-    st.plotly_chart(fig3, use_container_width=True)
+    make_light_plotly(fig_history_rain)
+    fig_history_rain.update_yaxes(title="Rainfall (mm)")
 
-    st.subheader("Historical Data")
     show_df = history_df.rename(columns={
         "time": "Time",
         "temperature_2m": "Temperature (°C)",
@@ -260,7 +265,39 @@ if st.session_state.show_weather and st.session_state.weather_data:
         "wind_speed_10m": "Wind Speed (km/h)",
         "precipitation": "Rainfall (mm)"
     })
-    st.dataframe(show_df, use_container_width=True, hide_index=True)
+
+    tab1, tab2, tab3 = st.tabs(["Current", "Forecast", "History"])
+
+    with tab1:
+        st.subheader(f"📍 {place}")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Temperature", f"{current_temp} °C")
+            st.metric("Wind Speed", f"{current_wind} km/h")
+        with col2:
+            st.metric("Humidity", f"{current_humidity} %")
+            st.metric("Rain Chance", f"{daily_rain_pct} %")
+
+        st.subheader("Map")
+        st_folium(m, width=None, height=300)
+
+    with tab2:
+        st.subheader("Forecast Temperature")
+        st.plotly_chart(fig_forecast_temp, use_container_width=True)
+
+        st.subheader("Forecast Rain")
+        st.plotly_chart(fig_rain, use_container_width=True)
+
+    with tab3:
+        st.subheader("Historical Temperature")
+        st.plotly_chart(fig_history_temp, use_container_width=True)
+
+        st.subheader("Historical Rainfall")
+        st.plotly_chart(fig_history_rain, use_container_width=True)
+
+        st.subheader("Historical Data")
+        st.dataframe(show_df, use_container_width=True, hide_index=True)
 
 else:
     st.info("Select a place and click Get Weather")
