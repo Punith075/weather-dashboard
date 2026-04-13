@@ -391,25 +391,30 @@ def apply_dashboard_theme(theme_name: str):
 # -------------------------------------------------
 def fetch_json_with_retry(url, params, timeout=20, retries=1, wait_seconds=2):
     for attempt in range(retries + 1):
-        response = requests.get(url, params=params, timeout=timeout)
+        try:
+            response = requests.get(url, params=params, timeout=timeout)
 
-        if response.status_code == 429:
+            if response.status_code == 429:
+                if attempt < retries:
+                    time.sleep(wait_seconds)
+                    continue
+                return None, 429
+
+            response.raise_for_status()
+            return response.json(), response.status_code
+
+        except requests.RequestException:
             if attempt < retries:
                 time.sleep(wait_seconds)
                 continue
-            return None, 429
-
-        try:
-            response.raise_for_status()
-            return response.json(), response.status_code
-        except requests.RequestException:
-            return None, response.status_code
+            return None, None
 
     return None, None
 
 # -------------------------------------------------
 # API FUNCTIONS
 # -------------------------------------------------
+@st.cache_data(ttl=600)
 def get_weather(lat, lon):
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
@@ -425,13 +430,10 @@ def get_weather(lat, lon):
     data, status = fetch_json_with_retry(url, params, timeout=10, retries=1, wait_seconds=2)
 
     if status == 429:
-        st.warning("Too many weather requests. Please wait a few seconds and try again.")
-        return None
-    if data is None:
-        st.warning("Weather data is temporarily unavailable. Please try again in a few seconds.")
         return None
     return data
 
+@st.cache_data(ttl=1800)
 def get_history(lat, lon, start, end):
     start_dt = pd.to_datetime(start).date()
     end_dt = pd.to_datetime(end).date()
@@ -453,11 +455,7 @@ def get_history(lat, lon, start, end):
 
         data, status = fetch_json_with_retry(url, params, timeout=20, retries=1, wait_seconds=2)
 
-        if status == 429:
-            st.warning("Too many requests. Please wait about 10 seconds and try again.")
-            return None
-        if data is None or "hourly" not in data:
-            st.warning("Historical weather is temporarily unavailable. Please try again in a few seconds.")
+        if status == 429 or data is None or "hourly" not in data:
             return None
 
         df = pd.DataFrame(data["hourly"])
@@ -484,11 +482,7 @@ def get_history(lat, lon, start, end):
 
     data, status = fetch_json_with_retry(url, params, timeout=20, retries=1, wait_seconds=2)
 
-    if status == 429:
-        st.warning("Too many requests from the historical weather server. Please wait 10–20 seconds and try again.")
-        return None
-    if data is None or "hourly" not in data:
-        st.warning("Historical weather is temporarily unavailable. Please try again in a few seconds.")
+    if status == 429 or data is None or "hourly" not in data:
         return None
 
     return data
@@ -559,7 +553,21 @@ def show_dashboard():
                 weather = get_weather(lat, lon)
                 history = get_history(lat, lon, str(start_date), str(end_date))
 
-            if weather is not None and history is not None and "hourly" in history:
+            if weather is None:
+                st.warning("Weather API is busy right now. Please wait a few seconds and try again.")
+                st.session_state.show_weather = False
+                st.session_state.weather_data = None
+            elif history is None:
+                st.warning("Historical API is temporarily unavailable. Current weather still works.")
+                st.session_state.weather_data = {
+                    "place": place,
+                    "lat": lat,
+                    "lon": lon,
+                    "weather": weather,
+                    "history": {"hourly": {}}
+                }
+                st.session_state.show_weather = True
+            else:
                 st.session_state.weather_data = {
                     "place": place,
                     "lat": lat,
@@ -568,9 +576,6 @@ def show_dashboard():
                     "history": history
                 }
                 st.session_state.show_weather = True
-            else:
-                st.session_state.show_weather = False
-                st.session_state.weather_data = None
 
     if clear_btn:
         st.session_state.show_weather = False
@@ -594,9 +599,11 @@ def show_dashboard():
         daily_df = pd.DataFrame(weather["daily"])
         daily_rain_pct = int(daily_df["precipitation_probability_max"].iloc[0]) if not daily_df.empty else 0
 
-        history_df = pd.DataFrame(history["hourly"])
-        if not history_df.empty and "time" in history_df.columns:
-            history_df["time"] = pd.to_datetime(history_df["time"])
+        history_df = pd.DataFrame()
+        if history is not None and "hourly" in history and history["hourly"]:
+            history_df = pd.DataFrame(history["hourly"])
+            if not history_df.empty and "time" in history_df.columns:
+                history_df["time"] = pd.to_datetime(history_df["time"])
 
         m = folium.Map(location=[lat, lon], zoom_start=6, tiles="OpenStreetMap")
         folium.Marker([lat, lon], tooltip=place, popup=place).add_to(m)
@@ -611,14 +618,6 @@ def show_dashboard():
         )
         apply_plotly_theme(fig_rain, plotly_template, paper_bg, plot_bg, text_color)
         fig_rain.update_yaxes(title="Rain Percentage (%)", range=[0, 100])
-
-        show_df = history_df.rename(columns={
-            "time": "Time",
-            "temperature_2m": "Temperature (°C)",
-            "relative_humidity_2m": "Humidity (%)",
-            "wind_speed_10m": "Wind Speed (km/h)",
-            "precipitation": "Rainfall (mm)"
-        })
 
         tab1, tab2, tab3 = st.tabs(["Current", "Forecast", "History"])
 
@@ -644,23 +643,34 @@ def show_dashboard():
             st.plotly_chart(fig_rain, width="stretch")
 
         with tab3:
-            st.subheader("Historical Temperature")
-            fig_history_temp = px.line(
-                history_df, x="time", y="temperature_2m", markers=True, title="Historical Temperature"
-            )
-            apply_plotly_theme(fig_history_temp, plotly_template, paper_bg, plot_bg, text_color)
-            st.plotly_chart(fig_history_temp, width="stretch")
+            if not history_df.empty:
+                st.subheader("Historical Temperature")
+                fig_history_temp = px.line(
+                    history_df, x="time", y="temperature_2m", markers=True, title="Historical Temperature"
+                )
+                apply_plotly_theme(fig_history_temp, plotly_template, paper_bg, plot_bg, text_color)
+                st.plotly_chart(fig_history_temp, width="stretch")
 
-            st.subheader("Historical Rainfall")
-            fig_history_rain = px.bar(
-                history_df, x="time", y="precipitation", title="Historical Rainfall"
-            )
-            apply_plotly_theme(fig_history_rain, plotly_template, paper_bg, plot_bg, text_color)
-            fig_history_rain.update_yaxes(title="Rainfall (mm)")
-            st.plotly_chart(fig_history_rain, width="stretch")
+                st.subheader("Historical Rainfall")
+                fig_history_rain = px.bar(
+                    history_df, x="time", y="precipitation", title="Historical Rainfall"
+                )
+                apply_plotly_theme(fig_history_rain, plotly_template, paper_bg, plot_bg, text_color)
+                fig_history_rain.update_yaxes(title="Rainfall (mm)")
+                st.plotly_chart(fig_history_rain, width="stretch")
 
-            st.subheader("Historical Data")
-            st.dataframe(show_df, width="stretch", hide_index=True)
+                show_df = history_df.rename(columns={
+                    "time": "Time",
+                    "temperature_2m": "Temperature (°C)",
+                    "relative_humidity_2m": "Humidity (%)",
+                    "wind_speed_10m": "Wind Speed (km/h)",
+                    "precipitation": "Rainfall (mm)"
+                })
+
+                st.subheader("Historical Data")
+                st.dataframe(show_df, width="stretch", hide_index=True)
+            else:
+                st.info("Historical data is temporarily unavailable for this selection.")
     else:
         st.info("Select a place and click Get Weather")
 
