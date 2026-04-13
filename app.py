@@ -226,15 +226,17 @@ def login_page_style():
 def show_login():
     login_page_style()
 
-    top_space, form_row, bottom_space = st.columns([1, 1, 1])
+    left, center, right = st.columns([1.2, 1, 1.2])
 
-    with form_row:
+    with center:
+        st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
+
         st.markdown(
             """
             <div style="
                 text-align:center;
-                font-size: 2.4rem;
-                font-weight: 800;
+                font-size: 2.2rem;
+                font-weight: 700;
                 color: #e2e8f0;
                 margin-bottom: 20px;
                 text-shadow: 0 0 10px rgba(125,211,252,0.6);
@@ -407,6 +409,39 @@ def get_weather(lat, lon):
 
 def get_history(lat, lon, start, end):
     try:
+        start_dt = pd.to_datetime(start).date()
+        end_dt = pd.to_datetime(end).date()
+        today = date.today()
+
+        # Recent dates: use forecast API with past_days
+        if end_dt >= today - timedelta(days=5):
+            past_days = max(1, (today - start_dt).days)
+
+            url = "https://api.open-meteo.com/v1/forecast"
+            params = {
+                "latitude": lat,
+                "longitude": lon,
+                "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation",
+                "past_days": min(past_days, 92),
+                "forecast_days": 0,
+                "timezone": "auto"
+            }
+
+            response = requests.get(url, params=params, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+
+            df = pd.DataFrame(data["hourly"])
+            df["time"] = pd.to_datetime(df["time"])
+
+            df = df[
+                (df["time"].dt.date >= start_dt) &
+                (df["time"].dt.date <= end_dt)
+            ]
+
+            return {"hourly": df.to_dict(orient="list")}
+
+        # Older dates: use archive API
         url = "https://archive-api.open-meteo.com/v1/archive"
         params = {
             "latitude": lat,
@@ -416,11 +451,13 @@ def get_history(lat, lon, start, end):
             "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation",
             "timezone": "auto"
         }
+
         response = requests.get(url, params=params, timeout=20)
         response.raise_for_status()
         return response.json()
-    except Exception:
-        st.error("Failed to fetch historical data")
+
+    except Exception as e:
+        st.error(f"Failed to fetch historical data: {e}")
         return None
 
 def apply_plotly_theme(fig, plotly_template, paper_bg, plot_bg, text_color):
@@ -488,7 +525,7 @@ def show_dashboard():
             weather = get_weather(lat, lon)
             history = get_history(lat, lon, str(start_date), str(end_date))
 
-            if weather is not None and history is not None:
+            if weather is not None and history is not None and "hourly" in history:
                 st.session_state.weather_data = {
                     "place": place,
                     "lat": lat,
@@ -497,6 +534,9 @@ def show_dashboard():
                     "history": history
                 }
                 st.session_state.show_weather = True
+            else:
+                st.session_state.show_weather = False
+                st.session_state.weather_data = None
 
     if clear_btn:
         st.session_state.show_weather = False
@@ -520,8 +560,12 @@ def show_dashboard():
         daily_df = pd.DataFrame(weather["daily"])
         daily_rain_pct = int(daily_df["precipitation_probability_max"].iloc[0]) if not daily_df.empty else 0
 
-        history_df = pd.DataFrame(history["hourly"])
-        history_df["time"] = pd.to_datetime(history_df["time"])
+        if history is not None and "hourly" in history:
+            history_df = pd.DataFrame(history["hourly"])
+            if not history_df.empty and "time" in history_df.columns:
+                history_df["time"] = pd.to_datetime(history_df["time"])
+        else:
+            history_df = pd.DataFrame()
 
         m = folium.Map(location=[lat, lon], zoom_start=6, tiles="OpenStreetMap")
         folium.Marker([lat, lon], tooltip=place, popup=place).add_to(m)
@@ -537,24 +581,27 @@ def show_dashboard():
         apply_plotly_theme(fig_rain, plotly_template, paper_bg, plot_bg, text_color)
         fig_rain.update_yaxes(title="Rain Percentage (%)", range=[0, 100])
 
-        fig_history_temp = px.line(
-            history_df, x="time", y="temperature_2m", markers=True, title="Historical Temperature"
-        )
-        apply_plotly_theme(fig_history_temp, plotly_template, paper_bg, plot_bg, text_color)
+        if not history_df.empty:
+            fig_history_temp = px.line(
+                history_df, x="time", y="temperature_2m", markers=True, title="Historical Temperature"
+            )
+            apply_plotly_theme(fig_history_temp, plotly_template, paper_bg, plot_bg, text_color)
 
-        fig_history_rain = px.bar(
-            history_df, x="time", y="precipitation", title="Historical Rainfall"
-        )
-        apply_plotly_theme(fig_history_rain, plotly_template, paper_bg, plot_bg, text_color)
-        fig_history_rain.update_yaxes(title="Rainfall (mm)")
+            fig_history_rain = px.bar(
+                history_df, x="time", y="precipitation", title="Historical Rainfall"
+            )
+            apply_plotly_theme(fig_history_rain, plotly_template, paper_bg, plot_bg, text_color)
+            fig_history_rain.update_yaxes(title="Rainfall (mm)")
 
-        show_df = history_df.rename(columns={
-            "time": "Time",
-            "temperature_2m": "Temperature (°C)",
-            "relative_humidity_2m": "Humidity (%)",
-            "wind_speed_10m": "Wind Speed (km/h)",
-            "precipitation": "Rainfall (mm)"
-        })
+            show_df = history_df.rename(columns={
+                "time": "Time",
+                "temperature_2m": "Temperature (°C)",
+                "relative_humidity_2m": "Humidity (%)",
+                "wind_speed_10m": "Wind Speed (km/h)",
+                "precipitation": "Rainfall (mm)"
+            })
+        else:
+            show_df = pd.DataFrame()
 
         tab1, tab2, tab3 = st.tabs(["Current", "Forecast", "History"])
 
@@ -580,14 +627,17 @@ def show_dashboard():
             st.plotly_chart(fig_rain, width="stretch")
 
         with tab3:
-            st.subheader("Historical Temperature")
-            st.plotly_chart(fig_history_temp, width="stretch")
+            if not history_df.empty:
+                st.subheader("Historical Temperature")
+                st.plotly_chart(fig_history_temp, width="stretch")
 
-            st.subheader("Historical Rainfall")
-            st.plotly_chart(fig_history_rain, width="stretch")
+                st.subheader("Historical Rainfall")
+                st.plotly_chart(fig_history_rain, width="stretch")
 
-            st.subheader("Historical Data")
-            st.dataframe(show_df, width="stretch", hide_index=True)
+                st.subheader("Historical Data")
+                st.dataframe(show_df, width="stretch", hide_index=True)
+            else:
+                st.info("No historical data available for the selected range.")
     else:
         st.info("Select a place and click Get Weather")
 
