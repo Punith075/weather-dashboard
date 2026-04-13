@@ -401,10 +401,13 @@ def get_weather(lat, lon):
             "timezone": "auto"
         }
         response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 429:
+            st.warning("Too many requests. Please wait a few seconds and try again.")
+            return None
         response.raise_for_status()
         return response.json()
     except Exception:
-        st.error("Failed to fetch weather data")
+        st.warning("Weather data is temporarily unavailable. Please try again in a few seconds.")
         return None
 
 def get_history(lat, lon, start, end):
@@ -422,12 +425,15 @@ def get_history(lat, lon, start, end):
                 "latitude": lat,
                 "longitude": lon,
                 "hourly": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation",
-                "past_days": min(past_days, 92),
+                "past_days": min(past_days, 30),
                 "forecast_days": 0,
                 "timezone": "auto"
             }
 
             response = requests.get(url, params=params, timeout=20)
+            if response.status_code == 429:
+                st.warning("Too many requests. Please wait a few seconds and try again.")
+                return None
             response.raise_for_status()
             data = response.json()
 
@@ -453,11 +459,14 @@ def get_history(lat, lon, start, end):
         }
 
         response = requests.get(url, params=params, timeout=20)
+        if response.status_code == 429:
+            st.warning("Too many requests from the weather server. Please wait 10–20 seconds and try again.")
+            return None
         response.raise_for_status()
         return response.json()
 
-    except Exception as e:
-        st.error(f"Failed to fetch historical data: {e}")
+    except Exception:
+        st.warning("Historical weather is temporarily unavailable. Please try again in a few seconds.")
         return None
 
 def apply_plotly_theme(fig, plotly_template, paper_bg, plot_bg, text_color):
@@ -521,9 +530,10 @@ def show_dashboard():
             st.session_state.show_weather = False
             st.session_state.weather_data = None
         else:
-            lat, lon = PLACES[place]
-            weather = get_weather(lat, lon)
-            history = get_history(lat, lon, str(start_date), str(end_date))
+            with st.spinner("Fetching weather data..."):
+                lat, lon = PLACES[place]
+                weather = get_weather(lat, lon)
+                history = get_history(lat, lon, str(start_date), str(end_date))
 
             if weather is not None and history is not None and "hourly" in history:
                 st.session_state.weather_data = {
@@ -581,28 +591,6 @@ def show_dashboard():
         apply_plotly_theme(fig_rain, plotly_template, paper_bg, plot_bg, text_color)
         fig_rain.update_yaxes(title="Rain Percentage (%)", range=[0, 100])
 
-        if not history_df.empty:
-            fig_history_temp = px.line(
-                history_df, x="time", y="temperature_2m", markers=True, title="Historical Temperature"
-            )
-            apply_plotly_theme(fig_history_temp, plotly_template, paper_bg, plot_bg, text_color)
-
-            fig_history_rain = px.bar(
-                history_df, x="time", y="precipitation", title="Historical Rainfall"
-            )
-            apply_plotly_theme(fig_history_rain, plotly_template, paper_bg, plot_bg, text_color)
-            fig_history_rain.update_yaxes(title="Rainfall (mm)")
-
-            show_df = history_df.rename(columns={
-                "time": "Time",
-                "temperature_2m": "Temperature (°C)",
-                "relative_humidity_2m": "Humidity (%)",
-                "wind_speed_10m": "Wind Speed (km/h)",
-                "precipitation": "Rainfall (mm)"
-            })
-        else:
-            show_df = pd.DataFrame()
-
         tab1, tab2, tab3 = st.tabs(["Current", "Forecast", "History"])
 
         with tab1:
@@ -628,6 +616,25 @@ def show_dashboard():
 
         with tab3:
             if not history_df.empty:
+                fig_history_temp = px.line(
+                    history_df, x="time", y="temperature_2m", markers=True, title="Historical Temperature"
+                )
+                apply_plotly_theme(fig_history_temp, plotly_template, paper_bg, plot_bg, text_color)
+
+                fig_history_rain = px.bar(
+                    history_df, x="time", y="precipitation", title="Historical Rainfall"
+                )
+                apply_plotly_theme(fig_history_rain, plotly_template, paper_bg, plot_bg, text_color)
+                fig_history_rain.update_yaxes(title="Rainfall (mm)")
+
+                show_df = history_df.rename(columns={
+                    "time": "Time",
+                    "temperature_2m": "Temperature (°C)",
+                    "relative_humidity_2m": "Humidity (%)",
+                    "wind_speed_10m": "Wind Speed (km/h)",
+                    "precipitation": "Rainfall (mm)"
+                })
+
                 st.subheader("Historical Temperature")
                 st.plotly_chart(fig_history_temp, width="stretch")
 
